@@ -43,23 +43,49 @@ namespace Coverlet.Core.Helpers
         public static void BackupOriginalModule(string module, string identifier)
         {
             var backupPath = GetBackupPath(module, identifier);
+			var fi = new FileInfo(module);
+			if(fi.Length == 0)
+			{
+				Console.WriteLine("BackupOriginalModule: module " + module + " is empty!");
+				Environment.Exit(1);
+			}
             File.Copy(module, backupPath);
-        }
+			fi = new FileInfo(backupPath);
+			if (fi.Length == 0)
+			{
+				Console.WriteLine("BackupOriginalModule: backup " + module + " is empty!");
+				Environment.Exit(1);
+			}
+		}
 
-        public static void RestoreOriginalModule(string module, string identifier)
-        {
-            var backupPath = GetBackupPath(module, identifier);
+		public static void RestoreOriginalModule(string module, string identifier)
+		{
+			var backupPath = GetBackupPath(module, identifier);
 
-            // Restore the original module - retry up to 10 times, since the destination file could be locked
-            // See: https://github.com/tonerdo/coverlet/issues/25
-            var retryStrategy = CreateRetryStrategy();
+			// Restore the original module - retry up to 10 times, since the destination file could be locked
+			// See: https://github.com/tonerdo/coverlet/issues/25
+			var retryStrategy = CreateRetryStrategy();
 
-            RetryHelper.Retry(() =>
-            {
-                File.Copy(backupPath, module, true);
-                File.Delete(backupPath);
-            }, retryStrategy, 10);
-        }
+			int tryCount = 0;
+			RetryHelper.Retry(() =>
+			{
+				++tryCount;
+				var fi = new FileInfo(backupPath);
+				if (fi.Length == 0)
+				{
+					Console.WriteLine("RestoreOriginalModule " + tryCount + ": backup " + module + " is empty!");
+					Environment.Exit(1);
+				}
+				File.Copy(backupPath, module, true);
+				fi = new FileInfo(module);
+				if (fi.Length == 0)
+				{
+					Console.WriteLine("RestoreOriginalModule " + tryCount + ": module " + module + " is empty!");
+					Environment.Exit(1);
+				}
+				File.Delete(backupPath);
+			}, retryStrategy, 10);
+		}
 
         public static void DeleteHitsFile(string path)
         {
@@ -242,11 +268,13 @@ namespace Coverlet.Core.Helpers
 
             return false;
         }
+		static readonly string TmpPath = Guid.NewGuid().ToString();
 
-        private static string GetBackupPath(string module, string identifier)
+		private static string GetBackupPath(string module, string identifier)
         {
+			Directory.CreateDirectory(TmpPath);
             return Path.Combine(
-                Path.GetTempPath(),
+                TmpPath,
                 Path.GetFileNameWithoutExtension(module) + "_" + identifier + ".dll"
             );
         }

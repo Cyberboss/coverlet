@@ -92,44 +92,67 @@ namespace Coverlet.Core.Instrumentation
 
                 bool failedToCreateNewHitsFile = false;
                 try
-                {
-                    using (var fs = new FileStream(HitsFilePath, FileMode.CreateNew))
-                    using (var bw = new BinaryWriter(fs))
-                    {
-                        bw.Write(HitsArray.Length);
-                        foreach (int hitCount in HitsArray)
-                        {
-                            bw.Write(hitCount);
-                        }
-                    }
+				{
+					Console.WriteLine("Creating hits file: " + HitsFilePath);
+					using (var fs = new FileStream(HitsFilePath, FileMode.CreateNew))
+					{
+						Console.WriteLine("Created hits file");
+						using (var bw = new BinaryWriter(fs))
+						{
+							bw.Write(HitsArray.Length);
+							foreach (int hitCount in HitsArray)
+							{
+								bw.Write(hitCount);
+							}
+							Console.WriteLine("Wrote " + fs.Length + " bytes");
+						}
+					}
                 }
-                catch
-                {
-                    failedToCreateNewHitsFile = true;
+                catch (Exception e2)
+				{
+					Console.WriteLine("Failed writing to hits file (Attempt 1)!");
+					Console.WriteLine(e2.ToString());
+					failedToCreateNewHitsFile = true;
                 }
 
                 if (failedToCreateNewHitsFile)
-                {
-                    // Update the number of hits by adding value on disk with the ones on memory.
-                    // This path should be triggered only in the case of multiple AppDomain unloads.
-                    using (var fs = new FileStream(HitsFilePath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
-                    using (var br = new BinaryReader(fs))
-                    using (var bw = new BinaryWriter(fs))
-                    {
-                        int hitsLength = br.ReadInt32();
-                        if (hitsLength != HitsArray.Length)
-                        {
-                            throw new InvalidOperationException(
-                                $"{HitsFilePath} has {hitsLength} entries but on memory {nameof(HitsArray)} has {HitsArray.Length}");
-                        }
+				{
+					Console.WriteLine("Opening hits file: " + HitsFilePath);
+					try
+					{
+						// Update the number of hits by adding value on disk with the ones on memory.
+						// This path should be triggered only in the case of multiple AppDomain unloads.
+						using (var fs = new FileStream(HitsFilePath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+						{
+							var initialLength = fs.Length;
+							Console.WriteLine("Opened hits file. Initial length: " + initialLength);
+							using (var br = new BinaryReader(fs))
+							using (var bw = new BinaryWriter(fs))
+							{
+								int hitsLength = br.ReadInt32();
+								if (hitsLength != HitsArray.Length)
+								{
+									throw new InvalidOperationException(
+										$"{HitsFilePath} has {hitsLength} entries but on memory {nameof(HitsArray)} has {HitsArray.Length}");
+								}
 
-                        for (int i = 0; i < hitsLength; ++i)
-                        {
-                            int oldHitCount = br.ReadInt32();
-                            bw.Seek(-sizeof(int), SeekOrigin.Current);
-                            bw.Write(HitsArray[i] + oldHitCount);
-                        }
-                    }
+								for (int i = 0; i < hitsLength; ++i)
+								{
+									int oldHitCount = br.ReadInt32();
+									bw.Seek(-sizeof(int), SeekOrigin.Current);
+									bw.Write(HitsArray[i] + oldHitCount);
+								}
+							}
+							Console.WriteLine("Closing file... New size: " + fs.Length + " bytes");
+						}
+					}
+					catch (Exception e2)
+					{
+						Console.WriteLine("Failed writing to hits file (Attempt 2)!");
+						Console.WriteLine(e2.ToString());
+						Console.Out.Flush();
+						throw;
+					}
                 }
 
                 // Prevent any double counting scenario, i.e.: UnloadModule called twice (not sure if this can happen in practice ...)
